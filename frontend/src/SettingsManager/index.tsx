@@ -1,58 +1,114 @@
-import { Tag, Button } from '@blueprintjs/core';
+import { Button, Tag } from '@blueprintjs/core';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import './index.css';
 
-import { GetVersion } from '../../wailsjs/go/cfg/Config';
-import { BrowserOpenURL } from '../../wailsjs/runtime';
-import { ProxyState } from '../types';
+import { BrowserLink } from '@/common/BrowserLink';
+import { useProxyState } from '@/context/ProxyStateContext';
+import { IsNoSelfUpdate } from 'wails/go/app/App';
+import { GetVersion } from 'wails/go/config/Config';
+import { BrowserOpenURL } from 'wails/runtime';
 
+import { AppRoutingSettings } from './AppRoutingSettings';
+import { AutostartSwitch } from './AutostartSwitch';
+import { AutoupdateSwitch } from './AutoupdateSwitch';
+import { CAKeyStorageSwitch } from './CAKeyStorageSwitch';
+import { ExportDebugDataButton } from './ExportDebugDataButton';
+import { ExportLogsButton } from './ExportLogsButton';
 import { IgnoredHostsInput } from './IgnoredHostsInput';
+import { LocaleSelector } from './LocaleSelector';
+import { PACPortInput } from './PACPortInput';
 import { PortInput } from './PortInput';
+import { ThemeSelector } from './ThemeSelector';
 import { UninstallCADialog } from './UninstallCADialog';
 
-export interface SettingsManagerProps {
-  proxyState: ProxyState;
-}
-export function SettingsManager({ proxyState }: SettingsManagerProps) {
+const GITHUB_URL = 'https://github.com/irbis-sh/zen-desktop';
+const CHANGELOG_URL = `${GITHUB_URL}/blob/master/CHANGELOG.md`;
+const DOCS_URL = 'https://docs.irbis.sh/docs/zen/';
+
+export function SettingsManager() {
+  const { t } = useTranslation();
   const [state, setState] = useState({
     version: '',
+    updatePolicy: '',
+    showUpdateRadio: false,
   });
+  const { proxyState } = useProxyState();
 
   useEffect(() => {
     (async () => {
-      const version = await GetVersion();
-      setState({ ...state, version });
+      const [version, noSelfUpdate] = await Promise.all([GetVersion(), IsNoSelfUpdate()]);
+
+      setState((prev) => ({
+        ...prev,
+        showUpdateRadio: !noSelfUpdate,
+        version,
+      }));
     })();
   }, []);
 
   return (
     <div className="settings-manager">
+      <div className="settings-manager__section--app">
+        <Tag size="large" intent="primary" fill className="settings-manager__section-header">
+          {t('settings.sections.app')}
+        </Tag>
+
+        <div className="settings-manager__section-body">
+          <LocaleSelector />
+          <AutostartSwitch />
+          {state.showUpdateRadio && <AutoupdateSwitch />}
+          <ThemeSelector />
+          <div className="settings-manager__section--links">
+            <ExportLogsButton />
+            <ExportDebugDataButton />
+          </div>
+        </div>
+      </div>
+
       <div className="settings-manager__section--advanced">
-        <Tag large intent="warning" fill className="settings-manager__section-header">
-          Advanced
+        <Tag size="large" intent="warning" fill className="settings-manager__section-header">
+          {t('settings.sections.advanced')}
         </Tag>
 
         <div className="settings-manager__section-body">
           <PortInput />
+          <PACPortInput />
           <IgnoredHostsInput />
+          <AppRoutingSettings />
+          <CAKeyStorageSwitch proxyState={proxyState} />
           <UninstallCADialog proxyState={proxyState} />
         </div>
       </div>
 
-      <div className="settings-manager__about bp5-text-muted">
+      <div className="settings-manager__about bp6-text-muted">
         <div>
           <strong>Zen</strong>
         </div>
-        <div>Your Comprehensive Ad-Blocker and Privacy Guard</div>
-        <div>Version: {state.version}</div>
-        <div>© 2024 Ansar Smagulov</div>
+        <div>{t('settings.about.tagline')}</div>
+        <div>
+          {t('settings.about.version')}: {state.version}
+          <span className="settings-manager__about-changelog">
+            (<BrowserLink href={CHANGELOG_URL}>{t('settings.about.changelog')}</BrowserLink>)
+          </span>
+        </div>
+        <div>© 2026 Zen contributors</div>
         <Button
-          minimal
-          small
+          variant="minimal"
+          size="small"
+          icon="manual"
+          className="settings-manager__about-button"
+          onClick={() => BrowserOpenURL(DOCS_URL)}
+        >
+          {t('settings.about.docs')}
+        </Button>
+        <Button
+          variant="minimal"
+          size="small"
           icon="git-branch"
-          className="settings-manager__about-github-button"
-          onClick={() => BrowserOpenURL('https://github.com/anfragment/zen')}
+          className="settings-manager__about-button"
+          onClick={() => BrowserOpenURL(GITHUB_URL)}
         >
           GitHub
         </Button>

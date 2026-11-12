@@ -1,10 +1,14 @@
-import { FormGroup, NumericInput } from '@blueprintjs/core';
+import { FormGroup, NumericInput, Tooltip } from '@blueprintjs/core';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDebouncedCallback } from 'use-debounce';
 
-import { GetPort, SetPort } from '../../wailsjs/go/cfg/Config';
+import { useProxyState } from '@/context/ProxyStateContext';
+import { GetPort, SetPort } from 'wails/go/config/Config';
 
 export function PortInput() {
+  const { t } = useTranslation();
+  const { isProxyRunning } = useProxyState();
   const [state, setState] = useState({
     port: 0,
     loading: true,
@@ -23,26 +27,29 @@ export function PortInput() {
 
   return (
     <FormGroup
-      label="Port"
+      label={t('portInput.label')}
       labelFor="port"
       helperText={
         <>
-          The port the proxy server will listen on (0 for random). <br />
-          Using a port below 1024 may require elevated privileges.
+          {t('portInput.description')}
+          <br />
+          {t('portInput.helper')}
         </>
       }
     >
-      <NumericInput
-        id="port"
-        min={0}
-        max={65535}
-        value={state.port}
-        onValueChange={(port) => {
-          setState({ ...state, port });
-          setPort(port);
-        }}
-        disabled={state.loading}
-      />
+      <Tooltip content={t('common.stopProxyToModify') as string} disabled={!isProxyRunning} placement="top">
+        <NumericInput
+          id="port"
+          min={0}
+          max={65535}
+          value={state.port}
+          onValueChange={(port) => {
+            setState({ ...state, port });
+            setPort(port);
+          }}
+          disabled={state.loading || isProxyRunning}
+        />
+      </Tooltip>
     </FormGroup>
   );
 }

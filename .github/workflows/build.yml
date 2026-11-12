@@ -1,270 +1,316 @@
 name: Build & Release
 
+env:
+  SIGNPATH_ORG_ID: 4e46fe22-9387-4cc4-b458-ca6542b30ae7
+  SIGNPATH_PROJECT_SLUG: zen-desktop
+  SIGNPATH_SIGNING_POLICY_SLUG: release-signing
+  SIGNPATH_ARTIFACT_CONFIG_SLUG: ci-bundle
+
 on:
   push:
-    branches:
-      - master
-    tags:
-      - v*
+    branches: [master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 permissions:
-  # https://github.com/softprops/action-gh-release/issues/236
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }}) - ${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        os: [macOS-latest, ubuntu-latest, windows-latest]
-        arch: [amd64, arm64]
-        exclude:
-          # Cross-compilation to arm64 on x86 Linux is broken due to a bug in Go/Wails.
-          # Until that is fixed, only build x86 Linux binaries.
-          - os: ubuntu-latest
-            arch: arm64
-      fail-fast: false
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: ./go.mod
-      - run: go version
-      - name: Setup Node
-        uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: frontend/package.json
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - run: node --version
+          package-manager-cache: false
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        shell: bash
+        run: go install "github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Linux dependencies
+        run: task build:deps
+      - name: Build & Archive Linux binaries
+        run: |
+          task build:prod ARCH=${{ matrix.arch }}
+          tar -czvf Zen_linux_${{ matrix.arch }}.tar.gz -C build/bin Zen
+          task build:prod-noupdate ARCH=${{ matrix.arch }}
+          tar -czvf Zen_linux_${{ matrix.arch }}_noselfupdate.tar.gz -C build/bin Zen
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            Zen_linux_${{ matrix.arch }}.tar.gz
+            Zen_linux_${{ matrix.arch }}_noselfupdate.tar.gz
 
-      # -----
-      # Linux
-      # -----
-      - name: Install Linux Wails Dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install libgtk-3-0 libwebkit2gtk-4.0-dev gcc-aarch64-linux-gnu
-      - name: Build Linux Binary
-        if: runner.os == 'Linux'
-        run: wails build -o Zen-${{ matrix.arch }} -platform linux/${{ matrix.arch }} -ldflags "-X 'github.com/anfragment/zen/cfg.Version=$(git describe --tags --always --abbrev=0)'" -m -skipbindings
-      - name: Archive Linux Binary
-        if: runner.os == 'Linux'
-        run: |
-          mv build/bin/Zen-${{ matrix.arch }} Zen
-          tar -czvf Zen_linux_${{ matrix.arch }}.tar.gz Zen
-          rm Zen
-      - name: Build Linux Binary With Self-Updates Disabled
-        if: runner.os == 'Linux'
-        run: wails build -o Zen-${{ matrix.arch }} -platform linux/${{ matrix.arch }} -ldflags "-X 'github.com/anfragment/zen/cfg.Version=$(git describe --tags --always --abbrev=0)' -X 'github.com/anfragment/zen/cfg.noSelfUpdate=true'" -m -skipbindings
-      - name: Archive Linux Binary With Self-Updates Disabled
-        if: runner.os == 'Linux'
-        run: |
-          mv build/bin/Zen-${{ matrix.arch }} Zen
-          tar -czvf Zen_linux_${{ matrix.arch }}_noselfupdate.tar.gz Zen
-          rm Zen
-      - name: Upload Linux Binary Artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v3
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: Zen_linux_${{ matrix.arch }}
-          path: Zen_linux_${{ matrix.arch }}.tar.gz
-      - name: Upload Linux Binary With Self-Updates Disabled Artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v3
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          name: Zen_linux_${{ matrix.arch }}_noselfupdate
-          path: Zen_linux_${{ matrix.arch }}_noselfupdate.tar.gz
-      - name: Release Linux Binary Artifact
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          files: Zen_linux_${{ matrix.arch }}.tar.gz
-          tag_name: ${{ github.ref }}
-          draft: true
-      - name: Release Linux Binary With Self-Updates Disabled Artifact
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+          node-version-file: frontend/package.json
+          package-manager-cache: false
+      - name: Install Wails
+        shell: bash
+        run: go install "github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          files: Zen_linux_${{ matrix.arch }}_noselfupdate.tar.gz
-          tag_name: ${{ github.ref }}
-          draft: true
-
-      # -----
-      # macOS
-      # -----
-      - name: Install create-dmg
-        if: runner.os == 'macOS'
-        run: pip3 install setuptools && npm install -g create-dmg
-      - name: Build macOS App
-        if: runner.os == 'macOS'
-        run: |
-          wails build -platform darwin/${{ matrix.arch }} -ldflags "-X 'github.com/anfragment/zen/cfg.Version=$(git describe --tags --always --abbrev=0)'" -m -skipbindings
-          mv build/bin/Zen.app build/bin/Zen-${{ matrix.arch }}.app
-      - name: Codesign macOS App Bundle
-        if: runner.os == 'macOS'
-        env: 
-          MACOS_CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
-          MACOS_CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
-          MACOS_CI_KEYCHAIN_PWD: ${{ secrets.PROD_MACOS_CI_KEYCHAIN_PWD }}
-        run: |
-          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
-
-          security create-keychain -p "$MACOS_CI_KEYCHAIN_PWD" app.keychain 
-          security default-keychain -s app.keychain
-          security unlock-keychain -p "$MACOS_CI_KEYCHAIN_PWD" app.keychain
-          security import certificate.p12 -k app.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CI_KEYCHAIN_PWD" app.keychain
-          
-          /usr/bin/codesign --force -s "$MACOS_CERTIFICATE_NAME" --options runtime build/bin/Zen-${{ matrix.arch }}.app -v
-      - name: Notarize macOS App Bundle
-        if: runner.os == 'macOS'
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install macOS dependencies
+        if: github.event_name != 'pull_request'
+        run: task build:deps
+      - name: Set up keychain profile
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         env:
-          PROD_MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_APPLE_ID }}
-          PROD_MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_TEAM_ID }}
-          PROD_MACOS_NOTARIZATION_PWD: ${{ secrets.PROD_MACOS_NOTARIZATION_PWD }}
+          CI_KEYCHAIN_PWD: ${{ secrets.PROD_MACOS_CI_KEYCHAIN_PWD }}
+          CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
+          CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
         run: |
-          xcrun notarytool store-credentials "notarytool-profile" --apple-id "$PROD_MACOS_NOTARIZATION_APPLE_ID" --team-id "$PROD_MACOS_NOTARIZATION_TEAM_ID" --password "$PROD_MACOS_NOTARIZATION_PWD"
-
-          ditto -c -k --keepParent build/bin/Zen-${{ matrix.arch }}.app notarization.zip
-
-          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-
-          xcrun stapler staple build/bin/Zen-${{ matrix.arch }}.app
-      - name: Build macOS Installer
-        if: runner.os == 'macOS'
-        run: |
-          cp -a build/bin/Zen-${{ matrix.arch }}.app Zen.app
-          create-dmg Zen.app
-          mv "Zen 1.0.0.dmg" Zen-${{ matrix.arch }}.dmg
-          rm -rf Zen.app
-      - name: Codesign macOS Installer
-        if: runner.os == 'macOS'
-        env: 
-          MACOS_CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
-          MACOS_CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
-          MACOS_CI_KEYCHAIN_PWD: ${{ secrets.PROD_MACOS_CI_KEYCHAIN_PWD }}
-        run: |
-          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
-
-          security create-keychain -p "$MACOS_CI_KEYCHAIN_PWD" installer.keychain
-          security default-keychain -s installer.keychain
-          security unlock-keychain -p "$MACOS_CI_KEYCHAIN_PWD" installer.keychain
-          security import certificate.p12 -k installer.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CI_KEYCHAIN_PWD" installer.keychain
-          
-          /usr/bin/codesign --force -s "$MACOS_CERTIFICATE_NAME" --options runtime Zen-${{ matrix.arch }}.dmg -v
-      - name: Notarize macOS Installer
-        if: runner.os == 'macOS'
+          CI_KEYCHAIN_PWD=$CI_KEYCHAIN_PWD \
+          CERTIFICATE=$CERTIFICATE \
+          CERTIFICATE_PWD=$CERTIFICATE_PWD \
+          task build:setup-keychain
+      - name: Build & archive macOS artifacts without notarising
+        if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
         env:
-          PROD_MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_APPLE_ID }}
-          PROD_MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_TEAM_ID }}
-          PROD_MACOS_NOTARIZATION_PWD: ${{ secrets.PROD_MACOS_NOTARIZATION_PWD }}
+          CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_TEAM_ID }}
+          PROVISIONING_PROFILE: ${{ secrets.PROD_MACOS_PROVISIONING_PROFILE }}
         run: |
-          xcrun notarytool store-credentials "notarytool-profile" --apple-id "$PROD_MACOS_NOTARIZATION_APPLE_ID" --team-id "$PROD_MACOS_NOTARIZATION_TEAM_ID" --password "$PROD_MACOS_NOTARIZATION_PWD"
-
-          ditto -c -k --keepParent Zen-${{ matrix.arch }}.dmg notarization.zip
-
-          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-
-          xcrun stapler staple Zen-${{ matrix.arch }}.dmg
-      - name: Upload macOS installer artifact
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v3
-        with:
-          name: Zen_macos_${{ matrix.arch }}-installer
-          path: Zen-${{ matrix.arch }}.dmg
-      - name: Release macOS Installer
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: Zen-${{ matrix.arch }}.dmg
-          tag_name: ${{ github.ref }}
-          draft: true
-      - name: Archive macOS App Bundle
-        if: runner.os == 'macOS'
+          task build:app-signed-ci ARCH=${{ matrix.arch }}
+          tar -czvf Zen_darwin_${{ matrix.arch }}.tar.gz -C build/bin Zen.app
+      - name: Build & archive macOS artifacts without signing
+        # Without a provisioning profile, this build cannot reach the Secure Enclave key.
+        if: ${{ github.event.pull_request.head.repo.fork }}
         run: |
-          cp -a build/bin/Zen-${{ matrix.arch }}.app Zen.app
-          ditto -c -k --keepParent Zen.app Zen_darwin_${{ matrix.arch }}.zip
-          rm -rf Zen.app
-      - name: Upload Archived macOS App Bundle Artifact
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v3
-        with:
-          name: Zen_darwin_${{ matrix.arch }}
-          path: Zen_darwin_${{ matrix.arch }}.zip
-      - name: Release Archived macOS App Bundle
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: Zen_darwin_${{ matrix.arch }}.zip
-          tag_name: ${{ github.ref }}
-          draft: true
+          task build:app ARCH=${{ matrix.arch }}
+          tar -czvf Zen_darwin_${{ matrix.arch }}.tar.gz -C build/bin Zen.app
+      - name: Build & archive macOS artifacts
+        if: github.event_name != 'pull_request'
+        env:
+          CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
+          NOTARIZATION_APPLE_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_TEAM_ID }}
+          NOTARIZATION_PWD: ${{ secrets.PROD_MACOS_NOTARIZATION_PWD }}
+          PROVISIONING_PROFILE: ${{ secrets.PROD_MACOS_PROVISIONING_PROFILE }}
+        run: |
+          CERTIFICATE_NAME=$CERTIFICATE_NAME \
+          NOTARIZATION_APPLE_ID=$NOTARIZATION_APPLE_ID \
+          NOTARIZATION_TEAM_ID=$NOTARIZATION_TEAM_ID \
+          NOTARIZATION_PWD=$NOTARIZATION_PWD \
+          PROVISIONING_PROFILE=$PROVISIONING_PROFILE \
+          task build:prod ARCH=${{ matrix.arch }}
+          tar -czvf Zen_darwin_${{ matrix.arch }}.tar.gz -C build/bin Zen.app
+          mv build/bin/Zen.dmg build/bin/Zen-${{ matrix.arch }}.dmg
 
-      # -------
-      # Windows
-      # -------
-      - name: Build Windows App & Installer
-        if: runner.os == 'Windows'
-        run: wails build -o Zen-${{ matrix.arch }}.exe -platform windows/${{ matrix.arch }} -nsis -ldflags "-X 'github.com/anfragment/zen/cfg.Version=$(git describe --tags --always --abbrev=0)'" -m -skipbindings
-      - name: Archive Windows Binary
-        if: runner.os == 'Windows'
+          CERTIFICATE_NAME=$CERTIFICATE_NAME \
+          NOTARIZATION_APPLE_ID=$NOTARIZATION_APPLE_ID \
+          NOTARIZATION_TEAM_ID=$NOTARIZATION_TEAM_ID \
+          NOTARIZATION_PWD=$NOTARIZATION_PWD \
+          PROVISIONING_PROFILE=$PROVISIONING_PROFILE \
+          task build:prod-noupdate ARCH=${{ matrix.arch }}
+          tar -czvf Zen_darwin_${{ matrix.arch }}_noselfupdate.tar.gz -C build/bin Zen.app
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            Zen_darwin_${{ matrix.arch }}.tar.gz
+            build/bin/Zen-${{ matrix.arch }}.dmg
+            Zen_darwin_${{ matrix.arch }}_noselfupdate.tar.gz
+
+  build-windows:
+    name: Build Windows (${{ matrix.arch }})
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/package.json
+          package-manager-cache: false
+      - name: Install Wails
+        shell: bash
+        run: go install "github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build EXEs
         run: |
-          move build/bin/Zen-${{ matrix.arch }}.exe Zen.exe
-          Compress-Archive -Path Zen.exe -DestinationPath Zen_windows_${{ matrix.arch }}.zip
-          Remove-Item Zen.exe
-      - name: Build Windows Binary With Self-Updates Disabled
-        if: runner.os == 'Windows'
-        run: wails build -o Zen-${{ matrix.arch }}.exe -platform windows/${{ matrix.arch }} -nsis -ldflags "-X 'github.com/anfragment/zen/cfg.Version=$(git describe --tags --always --abbrev=0)' -X 'github.com/anfragment/zen/cfg.noSelfUpdate=true'" -m -skipbindings
-      - name: Archive Windows Binary With Self-Updates Disabled
-        if: runner.os == 'Windows'
+          # Prepare output directories
+          New-Item -Path .\ci-upload -ItemType Directory -Force
+          New-Item -Path .\ci-upload\unsigned -ItemType Directory -Force
+          New-Item -Path .\ci-upload\signed -ItemType Directory -Force
+          New-Item -Path .\ci-upload\final -ItemType Directory -Force
+
+          # build with self-update
+          task build:prod ARCH=${{ matrix.arch }}
+          Copy-Item .\build\bin\Zen.exe .\ci-upload\unsigned\Zen-selfupdate.exe
+          Copy-Item .\build\bin\Zen-${{ matrix.arch }}-installer.exe .\ci-upload\unsigned\Zen-installer.exe
+
+          # build without self-update
+          task build:prod-noupdate ARCH=${{ matrix.arch }}
+          Copy-Item .\build\bin\Zen.exe .\ci-upload\unsigned\Zen-noselfupdate.exe
+      - name: Upload intermediate unsigned artifacts
+        id: unsigned
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-unsigned-${{ matrix.arch }}
+          path: |
+            ci-upload/unsigned/Zen-selfupdate.exe
+            ci-upload/unsigned/Zen-noselfupdate.exe
+            ci-upload/unsigned/Zen-installer.exe
+      - name: Sign with SignPath
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token:                    ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id:              ${{ env.SIGNPATH_ORG_ID }}
+          project-slug:                 ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug:          ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug:  ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id:           ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion:          true
+          output-artifact-directory:    ci-upload/signed
+          parameters: |
+            arch: "${{ matrix.arch }}"
+            version: "${{ github.ref }}"
+      - name: Prepare final artifacts using unsigned artifacts
+        if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         run: |
-          move build/bin/Zen-${{ matrix.arch }}.exe Zen.exe
-          Compress-Archive -Path Zen.exe -DestinationPath Zen_windows_${{ matrix.arch }}_noselfupdate.zip
-          Remove-Item Zen.exe
-      - name: Upload Archived Windows Binary Artifact
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+          Move-Item -Path .\ci-upload\unsigned\Zen-installer.exe `
+                          -Destination .\ci-upload\final\Zen-${{ matrix.arch }}-installer.exe
+          # Build the self-update archive
+          Copy-Item `
+            -Path .\ci-upload\unsigned\Zen-selfupdate.exe `
+            -Destination .\ci-upload\unsigned\Zen.exe `
+            -Force
+          Compress-Archive `
+            -Path .\ci-upload\unsigned\Zen.exe `
+            -DestinationPath .\ci-upload\final\Zen_windows_${{ matrix.arch }}.zip
+          Remove-Item -Path .\ci-upload\unsigned\Zen.exe
+          # Build the no-self-update archive
+          Copy-Item `
+            -Path .\ci-upload\unsigned\Zen-noselfupdate.exe `
+            -Destination .\ci-upload\unsigned\Zen.exe `
+            -Force
+          Compress-Archive `
+            -Path .\ci-upload\unsigned\Zen.exe `
+            -DestinationPath .\ci-upload\final\Zen_windows_${{ matrix.arch }}_noselfupdate.zip
+      - name: Prepare final artifacts using signed artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          Move-Item -Path .\ci-upload\signed\Zen-installer.exe `
+                          -Destination .\ci-upload\final\Zen-${{ matrix.arch }}-installer.exe
+          # Build the self-update archive
+          Copy-Item `
+            -Path .\ci-upload\signed\Zen-selfupdate.exe `
+            -Destination .\ci-upload\signed\Zen.exe `
+            -Force
+          Compress-Archive `
+            -Path .\ci-upload\signed\Zen.exe `
+            -DestinationPath .\ci-upload\final\Zen_windows_${{ matrix.arch }}.zip
+          Remove-Item -Path .\ci-upload\signed\Zen.exe
+          # Build the no-self-update archive
+          Copy-Item `
+            -Path .\ci-upload\signed\Zen-noselfupdate.exe `
+            -Destination .\ci-upload\signed\Zen.exe `
+            -Force
+          Compress-Archive `
+            -Path .\ci-upload\signed\Zen.exe `
+            -DestinationPath .\ci-upload\final\Zen_windows_${{ matrix.arch }}_noselfupdate.zip
+      - name: Upload final signed artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Zen_windows_${{ matrix.arch }}
-          path: Zen_windows_${{ matrix.arch }}.zip
-      - name: Upload Windows Installer Artifact
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+          name: windows-final-${{ matrix.arch }}
+          path: |
+            ci-upload/final/Zen_windows_${{ matrix.arch }}.zip
+            ci-upload/final/Zen_windows_${{ matrix.arch }}_noselfupdate.zip
+            ci-upload/final/Zen-${{ matrix.arch }}-installer.exe
+
+  release:
+    permissions:
+      # https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds#generating-build-provenance-for-binaries
+      id-token: write
+      attestations: write
+      # Needed to create a draft release and upload assets with gh.
+      contents: write
+    name: Attest & Release
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: Zen_windows_${{ matrix.arch }}-installer
-          path: build/bin/Zen-${{ matrix.arch }}-installer.exe
-      - name: Upload Archived Windows Binary With Self-Updates Disabled Artifact
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+          pattern: linux-*
+          path: artifacts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: Zen_windows_${{ matrix.arch }}_noselfupdate
-          path: Zen_windows_${{ matrix.arch }}_noselfupdate.zip
-      - name: Release Archived Windows Binary
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+          pattern: macos-*
+          path: artifacts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          files: Zen_windows_${{ matrix.arch }}.zip
-          tag_name: ${{ github.ref }}
-          draft: true
-      - name: Release Windows Installer
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+          pattern: windows-final-*
+          path: artifacts
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          files: build/bin/Zen-${{ matrix.arch }}-installer.exe
-          tag_name: ${{ github.ref }}
-          draft: true
-      - name: Release Archived Windows Binary With Self-Updates Disabled
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: Zen_windows_${{ matrix.arch }}_noselfupdate.zip
-          tag_name: ${{ github.ref }}
-          draft: true
+          subject-path: artifacts/**
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mapfile -d '' files < <(find artifacts -type f -print0)
+
+          if ((${#files[@]} == 0)); then
+            echo "No release artifacts found" >&2
+            exit 1
+          fi
+
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" --draft --title "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"

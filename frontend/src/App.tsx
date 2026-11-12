@@ -1,98 +1,121 @@
-import { Button, ButtonGroup, Icon, IconSize, FocusStyleManager, NonIdealState } from '@blueprintjs/core';
+import { Button, ButtonGroup, FocusStyleManager, NonIdealState } from '@blueprintjs/core';
 import { useState, useEffect } from 'react';
-
-import { StartProxy, StopProxy } from '../wailsjs/go/app/App';
+import { useTranslation } from 'react-i18next';
 
 import './App.css';
+
+import { RestartApplication } from 'wails/go/app/App';
+import { GetFirstLaunch } from 'wails/go/config/Config';
+import { EventsOn } from 'wails/runtime/runtime';
+
+import { ThemeType, useTheme } from './common/ThemeManager';
 import { AppToaster } from './common/toaster';
+import { AppHeader } from './components/AppHeader';
+import { StartStopButton } from './components/StartStopButton';
+import { useProxyState } from './context/ProxyStateContext';
 import { FilterLists } from './FilterLists';
+import { Intro } from './Intro';
+import { useProxyHotkey } from './ProxyHotkey';
 import { RequestLog } from './RequestLog';
+import { Rules } from './Rules';
 import { SettingsManager } from './SettingsManager';
-import { ProxyState } from './types';
 
 function App() {
+  const { t } = useTranslation();
+  const { effectiveTheme } = useTheme();
+
   useEffect(() => {
     FocusStyleManager.onlyShowFocusOnTabs();
   }, []);
 
-  const [proxyState, setProxyState] = useState<ProxyState>('off');
-  const [activeTab, setActiveTab] = useState<'home' | 'filterLists' | 'settings'>('home');
+  useEffect(() => {
+    const cancel = EventsOn('app:update', (action: { kind: string }) => {
+      if (action.kind === 'updateAvailable') {
+        AppToaster.show({
+          message: t('app.update.updateAvailable'),
+          intent: 'primary',
+          timeout: 0,
+          action: {
+            text: t('app.update.restart'),
+            onClick: () => {
+              const restartingToast = AppToaster.show({
+                message: t('app.update.restarting'),
+                intent: 'primary',
+                timeout: 0,
+              });
+              RestartApplication().catch((error) => {
+                AppToaster.dismiss(restartingToast);
+                AppToaster.show({
+                  message: t('app.update.restartFailed', { error }),
+                  intent: 'danger',
+                });
+              });
+            },
+          },
+        });
+      }
+    });
 
-  const startProxy = async () => {
-    setProxyState('loading');
-    try {
-      await StartProxy();
-    } catch (err) {
-      AppToaster.show({
-        message: `Failed to start proxy: ${err}`,
-        intent: 'danger',
-      });
-      setProxyState('off');
-      return;
-    }
-    setProxyState('on');
-  };
-  const stopProxy = async () => {
-    setProxyState('loading');
-    try {
-      await StopProxy();
-    } catch (err) {
-      AppToaster.show({
-        message: `Failed to stop proxy: ${err}`,
-        intent: 'danger',
-      });
-    } finally {
-      setProxyState('off');
-    }
-  };
+    return cancel;
+  }, [t]);
+
+  const { proxyState } = useProxyState();
+  const [activeTab, setActiveTab] = useState<'home' | 'filterLists' | 'rules' | 'settings'>('home');
+  const [showIntro, setShowIntro] = useState(false);
+
+  useEffect(() => {
+    GetFirstLaunch().then(setShowIntro);
+  }, []);
+
+  useProxyHotkey(showIntro);
 
   return (
-    <div id="App">
-      <div className="heading">
-        <h1 className="heading__logo">
-          <Icon icon="shield" size={IconSize.LARGE} />
-          ZEN
-        </h1>
-      </div>
-      <ButtonGroup fill minimal className="tabs">
-        <Button icon="circle" active={activeTab === 'home'} onClick={() => setActiveTab('home')}>
-          Home
-        </Button>
-        <Button icon="filter" active={activeTab === 'filterLists'} onClick={() => setActiveTab('filterLists')}>
-          Filter lists
-        </Button>
-        <Button icon="settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
-          Settings
-        </Button>
-      </ButtonGroup>
+    <div id="app" className={effectiveTheme === ThemeType.DARK ? 'bp6-dark' : ''}>
+      <AppHeader />
 
-      <div className="content">
-        <div style={{ display: activeTab === 'home' ? 'block' : 'none' }}>
-          {proxyState === 'off' ? (
-            <NonIdealState
-              icon="lightning"
-              title="Activate the proxy to see blocked requests"
-              description="The proxy is not active. Click the button below to activate it."
-              className="request-log__non-ideal-state"
-            />
-          ) : (
-            <RequestLog />
-          )}
-        </div>
-        {activeTab === 'filterLists' && <FilterLists />}
-        {activeTab === 'settings' && <SettingsManager proxyState={proxyState} />}
-      </div>
+      {showIntro ? (
+        <Intro
+          onClose={() => {
+            setShowIntro(false);
+          }}
+        />
+      ) : (
+        <>
+          <ButtonGroup fill variant="minimal" className="tabs">
+            <Button icon="circle" active={activeTab === 'home'} onClick={() => setActiveTab('home')}>
+              {t('app.tabs.home')}
+            </Button>
+            <Button icon="filter" active={activeTab === 'filterLists'} onClick={() => setActiveTab('filterLists')}>
+              {t('app.tabs.filterLists')}
+            </Button>
+            <Button icon="code" active={activeTab === 'rules'} onClick={() => setActiveTab('rules')}>
+              {t('app.tabs.rules')}
+            </Button>
+            <Button icon="settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
+              {t('app.tabs.settings')}
+            </Button>
+          </ButtonGroup>
 
-      <Button
-        onClick={proxyState === 'off' ? startProxy : stopProxy}
-        fill
-        intent="primary"
-        className="footer"
-        large
-        loading={proxyState === 'loading'}
-      >
-        {proxyState === 'off' ? 'Start' : 'Stop'}
-      </Button>
+          <div className="content">
+            <div style={{ display: activeTab === 'home' ? 'block' : 'none' }}>
+              {proxyState === 'off' ? (
+                <NonIdealState
+                  icon="lightning"
+                  title={t('app.proxy.inactive')}
+                  description={t('app.proxy.description') as string}
+                  className="request-log__non-ideal-state"
+                />
+              ) : (
+                <RequestLog />
+              )}
+            </div>
+            {activeTab === 'filterLists' && <FilterLists />}
+            {activeTab === 'rules' && <Rules />}
+            {activeTab === 'settings' && <SettingsManager />}
+          </div>
+          <StartStopButton />
+        </>
+      )}
     </div>
   );
 }

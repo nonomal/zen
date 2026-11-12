@@ -1,0 +1,151 @@
+package certstore
+
+/*
+This file contains code from the mkcert project,
+licensed under the BSD 3-Clause License:
+Copyright (c) 2018 The mkcert Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+- Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+- Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+// Since Firefox 147, new installs follow the XDG base directory spec: without an
+// existing ~/.mozilla, profiles go under $XDG_CONFIG_HOME/mozilla, which Flatpak
+// points at ~/.var/app/<app-id>/config. Both layouts are listed.
+var firefoxProfiles = []string{
+	os.Getenv("HOME") + "/.mozilla/firefox/*",
+	xdgConfigHome() + "/mozilla/firefox/*",
+	os.Getenv("HOME") + "/snap/firefox/common/.mozilla/firefox/*",
+	os.Getenv("HOME") + "/.var/app/org.mozilla.firefox/.mozilla/firefox/*",
+	os.Getenv("HOME") + "/.var/app/org.mozilla.firefox/config/mozilla/firefox/*",
+}
+
+// xdgConfigHome returns $XDG_CONFIG_HOME, or ~/.config when it is unset or not an
+// absolute path, as the XDG base directory spec requires.
+func xdgConfigHome() string {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
+		return dir
+	}
+	return filepath.Join(os.Getenv("HOME"), ".config")
+}
+
+const (
+	// caFolderName defines the name of the folder where the root CA certificate and key are stored.
+	caFolderName = "certs"
+	// systemTrustFilename is the name of the file that contains the system trust settings.
+	systemTrustFilename = "zen-rootCA"
+	// hardwareKeyName is unused: Linux has no hardware key support yet, so the store always
+	// keeps the key on disk.
+	hardwareKeyName = ""
+)
+
+// systemTrustCandidate describes one known system trust store layout:
+// the anchor directory to probe for, the extension the installed cert must have,
+// and the command that rebuilds the trust store after a change.
+type systemTrustCandidate struct {
+	dir     string
+	ext     string
+	command []string
+}
+
+var systemTrustCandidates = []systemTrustCandidate{
+	{dir: "/etc/pki/ca-trust/source/anchors", ext: ".pem", command: []string{"update-ca-trust", "extract"}},
+	{dir: "/usr/local/share/ca-certificates", ext: ".crt", command: []string{"update-ca-certificates"}},
+	{dir: "/etc/ca-certificates/trust-source/anchors", ext: ".crt", command: []string{"trust", "extract-compat"}},
+	{dir: "/usr/share/pki/trust/anchors", ext: ".pem", command: []string{"update-ca-certificates"}},
+}
+
+// getSystemTrustInfo identifies the system's trust store
+// and returns the filename the root CA should be stored in and the command to update the trust store.
+// It returns ErrNoSystemTrustStore when none of the known trust store layouts exist,
+// e.g. on NixOS, where trust is configured declaratively instead of via FHS directories.
+func getSystemTrustInfo() (certFilename string, command []string, err error) {
+	for _, candidate := range systemTrustCandidates {
+		if pathExists(candidate.dir) {
+			return filepath.Join(candidate.dir, systemTrustFilename+candidate.ext), candidate.command, nil
+		}
+	}
+
+	return "", nil, ErrNoSystemTrustStore
+}
+
+// systemTrustAvailable reports whether a known system trust store layout exists.
+func systemTrustAvailable() bool {
+	_, _, err := getSystemTrustInfo()
+	return err == nil
+}
+
+// installCATrust installs the CA into the system trust store.
+func (cs *DiskCertStore) installCATrust() error {
+	certFilename, systemTrustCommand, err := getSystemTrustInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get system trust store: %w", err)
+	}
+
+	cmd := exec.Command("pkexec", "tee", certFilename)
+	cmd.Stdin = bytes.NewReader(cs.certData)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("write cert to %s: %w\n%s", certFilename, err, out)
+	}
+
+	cmd = exec.Command("pkexec", systemTrustCommand...)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("system trust command: %w\n%s", err, out)
+	}
+
+	return nil
+}
+
+// uninstallCATrust uninstalls the CA from the system trust store.
+func (cs *DiskCertStore) uninstallCATrust() error {
+	certFilename, systemTrustCommand, err := getSystemTrustInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get system trust store: %w", err)
+	}
+
+	cmd := exec.Command("pkexec", "rm", "-f", certFilename)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("remove cert from %s: %w\n%s", certFilename, err, out)
+	}
+
+	cmd = exec.Command("pkexec", systemTrustCommand...)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("system trust command: %w\n%s", err, out)
+	}
+
+	return nil
+}

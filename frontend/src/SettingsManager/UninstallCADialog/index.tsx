@@ -1,16 +1,18 @@
 import { Button, Dialog, DialogBody, DialogFooter, Tooltip } from '@blueprintjs/core';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import './index.css';
 
-import { UninstallCA } from '../../../wailsjs/go/app/App';
-import { AppToaster } from '../../common/toaster';
-import { ProxyState } from '../../types';
+import { AppToaster } from '@/common/toaster';
+import { ProxyState } from '@/types';
+import { UninstallCA } from 'wails/go/app/App';
 
 export interface UninstallCADialogProps {
   proxyState: ProxyState;
 }
 export function UninstallCADialog({ proxyState }: UninstallCADialogProps) {
+  const { t } = useTranslation();
   const [state, setState] = useState({
     isOpen: false,
     loading: false,
@@ -18,35 +20,39 @@ export function UninstallCADialog({ proxyState }: UninstallCADialogProps) {
 
   return (
     <>
-      <Tooltip content={proxyState !== 'off' ? 'Stop the proxy to uninstall the CA' : undefined}>
+      <Tooltip content={proxyState !== 'off' ? (t('settings.ca.stopProxyTooltip') as string) : undefined}>
         <Button
           disabled={proxyState !== 'off'}
           onClick={() => setState((state) => ({ ...state, isOpen: true }))}
           intent="danger"
           className="uninstall-ca-dialog__button"
         >
-          Uninstall CA
+          {t('settings.ca.uninstallButton')}
         </Button>
       </Tooltip>
 
       <Dialog
         isOpen={state.isOpen}
         onClose={() => setState((state) => ({ ...state, isOpen: false }))}
-        title="Are you sure you want to uninstall the CA?"
+        title={
+          <Trans
+            i18nKey="settings.ca.confirmTitle"
+            components={{
+              br: <br />,
+            }}
+          />
+        }
         isCloseButtonShown={!state.loading}
         className="uninstall-ca-dialog"
       >
         <DialogBody>
           <p>
-            This can be useful if:
+            {t('settings.ca.usefulIf')}:
             <ul>
-              <li>You want to uninstall Zen completely.</li>
-              <li>
-                You suspect that your CA installation is malfunctioning. This issue may manifest as a browser error when
-                visiting HTTPS websites, or as other applications being unable to connect to the internet.
-              </li>
+              <li>{t('settings.ca.reasons.uninstall')}</li>
+              <li>{t('settings.ca.reasons.malfunctioning')}</li>
             </ul>
-            If you start Zen again, a new CA will be installed.
+            {t('settings.ca.reinstallInfo')}
           </p>
         </DialogBody>
         <DialogFooter
@@ -59,12 +65,12 @@ export function UninstallCADialog({ proxyState }: UninstallCADialogProps) {
                 try {
                   await UninstallCA();
                   AppToaster.show({
-                    message: 'CA uninstalled successfully',
+                    message: t('settings.ca.successMessage'),
                     intent: 'success',
                   });
                 } catch (err) {
                   AppToaster.show({
-                    message: `Failed to uninstall CA: ${err}`,
+                    message: t('settings.ca.errorMessage', { error: err }),
                     intent: 'danger',
                   });
                 } finally {
@@ -72,7 +78,7 @@ export function UninstallCADialog({ proxyState }: UninstallCADialogProps) {
                 }
               }}
             >
-              Uninstall
+              {t('settings.ca.uninstallConfirm')}
             </Button>
           }
         />

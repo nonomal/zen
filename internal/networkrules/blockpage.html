@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="{{ .L.Lang }}">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ .L.T "blockPage.title" }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <style>
+      {{ .SharedStyle }}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>{{ .L.T "blockPage.heading" }}</h1>
+        <p><strong>{{ .L.T "common.url" }}</strong> <code id="url"></code></p>
+        {{ if .Rule }}
+        <p><strong>{{ .L.T "blockPage.rule" }}</strong> <code>{{ .Rule }}</code></p>
+        {{ end }} {{ if .FilterList }}
+        <p><strong>{{ .L.T "blockPage.filterList" }}</strong> {{ .FilterList }}</p>
+        {{ end }}
+
+        <div class="actions">
+          <a id="allowLink" class="btn" onclick="allow()">{{ .L.T "blockPage.allow" }}</a>
+          <a class="btn secondary" onclick="window.history.back()">{{ .L.T "common.goBack" }}</a>
+        </div>
+      </div>
+    </div>
+    <script>
+      document.getElementById('url').textContent = window.location.toString();
+
+      const rule = '{{ .Rule }}';
+      const returnTo = encodeURIComponent(location.href);
+
+      document.getElementById(
+        'allowLink'
+      ).href = `http://127.0.0.1:{{ .WhitelistPort }}/allow-rule?rule=${encodeURIComponent(
+        rule
+      )}&returnTo=${returnTo}`;
+    </script>
+  </body>
+</html>

@@ -1,45 +1,88 @@
-<p align="center">
+<div align="center">
+
+<p>
   <picture>
-    <img src="https://github.com/anfragment/zen/blob/master/assets/appicon.png?raw=true" alt="Zen's Blue Shield Logo" width="150" />
+    <img src="https://github.com/irbis-sh/zen-desktop/blob/master/assets/appicon.png?raw=true" alt="Zen's Blue Shield Logo" width="150" />
   </picture>
 </p>
 
-<h3 align="center">
+<h3>
   Zen: Your Comprehensive Ad-Blocker and Privacy Guard
 </h3>
-<blockquote align="center">
+
+<blockquote>
 There is, simply, no way, to ignore privacy. Because a citizenry’s freedoms are interdependent, to surrender your own privacy is really to surrender everyone’s.
 
 Edward Snowden, Permanent Record
+
 </blockquote>
 
-![GitHub License](https://img.shields.io/github/license/anfragment/zen)
-![GitHub release](https://img.shields.io/github/v/release/anfragment/zen)
-![GitHub download counter](https://img.shields.io/github/downloads/anfragment/zen/total)
+![GitHub License](https://img.shields.io/github/license/irbis-sh/zen-desktop)
+![GitHub release](https://img.shields.io/github/v/release/irbis-sh/zen-desktop)
+![GitHub download counter](https://img.shields.io/github/downloads/irbis-sh/zen-desktop/total)
+
+[**Website**](https://irbis.sh/zen) • [**Mastodon**](https://mastodon.social/@irbis_sh) • [**Bluesky**](https://bsky.app/profile/irbis.sh) • [**Discord**](https://discord.gg/zGeQVatAUm) • [**Documentation**](https://docs.irbis.sh/docs/zen/)
+
+</div>
 
 Zen is an open-source system-wide ad-blocker and privacy guard for Windows, macOS, and Linux. It works by setting up a proxy that intercepts HTTP requests from all applications, and blocks those serving ads, tracking scripts that monitor your behavior, malware, and other unwanted content. By operating at the system level, Zen can protect against threats that browser extensions cannot, such as trackers embedded in desktop applications and operating system components. Zen comes with many pre-installed filters, but also allows you to easily add hosts files and EasyList-style filters, enabling you to tailor your protection to your specific needs.
 
 ## Downloads
 
-During the first run, Zen will prompt you to install a root certificate. This is required for Zen to be able to intercept and modify HTTPS requests. This certificate is generated locally and never leaves your device.
+During the first run, Zen will prompt you to install a root certificate. This is required for Zen to be able to intercept and modify HTTPS requests. This certificate is generated locally and never leaves your device. For details on how this works and the steps we take to secure it, see our [security architecture](https://docs.irbis.sh/docs/zen/explanation/security-architecture/).
 
 ### Windows
-- x64: [💾 Installer](https://github.com/anfragment/zen/releases/latest/download/Zen-amd64-installer.exe) | [📦 Portable](https://github.com/anfragment/zen/releases/latest/download/Zen_windows_amd64.zip)
-- ARM64: [💾 Installer](https://github.com/anfragment/zen/releases/latest/download/Zen-arm64-installer.exe) | [📦 Portable](https://github.com/anfragment/zen/releases/latest/download/Zen_windows_arm64.zip)
+
+- x64: [💾 Installer](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen-amd64-installer.exe) | [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_windows_amd64.zip)
+- ARM64: [💾 Installer](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen-arm64-installer.exe) | [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_windows_arm64.zip)
 
 Unsure which version to download? Click on 'Start' and type 'View processor info'. The 'System type' field under 'Device specifications' will tell you which one you need.
 
+#### Winget
+
+Zen is available via [Winget (Windows Package Manager)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/z/ZenPrivacy). To install, run:
+
+```bash
+winget install ZenPrivacy.ZenDesktop
+```
+
 ### macOS
-- x64 (Intel): [💾 Installer](https://github.com/anfragment/zen/releases/latest/download/Zen-amd64.dmg) | [📦 Portable](https://github.com/anfragment/zen/releases/latest/download/Zen_darwin_amd64.zip)
-- ARM64 (Apple Silicon): [💾 Installer](https://github.com/anfragment/zen/releases/latest/download/Zen-arm64.dmg) | [📦 Portable](https://github.com/anfragment/zen/releases/latest/download/Zen_darwin_arm64.zip)
+
+- x64 (Intel): [💾 Installer](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen-amd64.dmg) | [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_darwin_amd64.tar.gz)
+- ARM64 (Apple Silicon): [💾 Installer](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen-arm64.dmg) | [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_darwin_arm64.tar.gz)
 
 Unsure which version to download? Learn at [Apple's website](https://support.apple.com/en-us/HT211814).
 
-### Linux
-- AUR: [👾 zen-adblocker-bin](https://aur.archlinux.org/packages/zen-adblocker-bin)
-- x64: [📦 Portable](https://github.com/anfragment/zen/releases/latest/download/Zen_linux_amd64.tar.gz)
+#### 🍺 Homebrew
 
-Zen is currently only supported on GNOME-based desktop environments.
+Zen is available via [Homebrew](https://formulae.brew.sh/cask/irbis-zen) for both Intel and Apple Silicon. To install it, run:
+
+```bash
+brew install --cask irbis-zen
+```
+
+### Linux
+
+Zen has an install script that covers most Linux distributions. To install, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/irbis-sh/zen-desktop/master/install.sh | sh
+```
+
+To uninstall, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/irbis-sh/zen-desktop/master/install.sh | sh -s -- --uninstall
+```
+
+Other installation methods:
+
+- AUR: [👾 zen-adblocker-bin](https://aur.archlinux.org/packages/zen-adblocker-bin)
+- Nix: [❄️ Installation guide](https://docs.irbis.sh/docs/zen/how-to/install-nix/)
+- x64: [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_linux_amd64.tar.gz)
+- ARM64: [📦 Portable](https://github.com/irbis-sh/zen-desktop/releases/latest/download/Zen_linux_arm64.tar.gz)
+
+On Linux, automatic proxy configuration is currently only supported on GNOME- and KDE-based desktop environments.
 
 ## Screenshots
 
@@ -60,15 +103,52 @@ Zen is currently only supported on GNOME-based desktop environments.
       </td>
     </tr>
     <tr>
-      <td align="center" valign="top"><img src="https://github.com/anfragment/zen/blob/master/assets/screenshots/main-window.png?raw=true" alt="Zen's main window"/></td>
-      <td align="center" valign="top"><img src="https://github.com/anfragment/zen/blob/master/assets/screenshots/filter-lists.png?raw=true" alt="Zen's filter list manager"/></td>
+      <td align="center" valign="top">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/main-dark.png">
+          <source media="(prefers-color-scheme: light)" srcset="assets/screenshots/main-light.png">
+          <img alt="Screenshot of Zen's Home screen showing blocked network requests. One entry details a blocked request to a Marketo tracking script from politico.com, with several other advertising and analytics domains listed below. Navigation tabs and a Donate button appear at the top, and a blue Stop button is visible at the bottom." src="assets/screenshots/main-light.png">
+        </picture>
+      </td>
+      <td align="center" valign="top">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/regional-dark.png">
+          <source media="(prefers-color-scheme: light)" srcset="assets/screenshots/regional-light.png">
+          <img alt="Screenshot of Zen's Filter lists screen showing a regional category with multiple ad-block filter lists from different countries. Each list includes a name, a source URL, and toggle switches indicating whether it is enabled." src="assets/screenshots/regional-light.png">
+        </picture>
+      </td>
     </tr>
   </tbody>
 </table>
 
-## Running & Building
+## Development
 
-Zen is based on [Wails](https://wails.io), a framework for building desktop applications using Go and web technologies. Follow the [installation instructions](https://wails.io/docs/gettingstarted/installation) to install it on your system. Use `wails build` to build Zen, and `wails dev` to run it in development mode.
+Follow the [getting started guide](docs/index.md#getting-started) to begin working on Zen development. If you have any questions, feel free to ask in the [Discussions](https://github.com/irbis-sh/zen-desktop/discussions/categories/q-a).
+
+## Contributing
+
+Zen needs your help! You can report bugs, suggest and implement features, improve the codebase, or help translate Zen into your language. Please refer to the [Contributing Guidelines](CONTRIBUTING.md) for more information. For other ways to help, such as spreading the word or donating, see [docs.irbis.sh/contribute](https://docs.irbis.sh/contribute/).
+
+## Special Thanks
+
+Zen exists thanks to the support of many incredible people and organizations, including:
+
+- Our contributors
+  <a href="https://github.com/irbis-sh/zen-desktop/graphs/contributors">
+  <img src="https://opencollective.com/irbis-sh/contributors.svg?width=890&button=false" alt="Avatars of all GitHub contributors to Zen" />
+  </a>
+
+- Our sponsors
+  <a href="https://opencollective.com/irbis-sh#backers" target="_blank" rel="noreferrer noopener">
+  <img src="https://opencollective.com/irbis-sh/backers.svg?width=890&button=false" alt="Avatars of all backers of Zen on Open Collective" />
+  </a>
+
+- [SignPath](https://signpath.io) and [SignPath Foundation](https://signpath.org/), who generously provide a free Windows certificate and code signing
+
+  <a href="https://signpath.io" target="_blank" rel="noreferrer noopener">
+  <img src="./assets/signpath-logo.png" width="260" />
+  </a>
 
 ## License
-This project is licensed under the [MIT License](https://github.com/anfragment/zen/blob/master/LICENSE). Some code and assets included with Zen are licensed under different terms. For more information, see the [COPYING](https://github.com/anfragment/zen/blob/master/COPYING.md) file.
+
+This project is licensed under the [MIT License](https://github.com/irbis-sh/zen-desktop/blob/master/LICENSE). Some code and assets included with Zen are licensed under different terms. For more information, see the [COPYING](https://github.com/irbis-sh/zen-desktop/blob/master/COPYING.md) file.

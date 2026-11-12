@@ -1,10 +1,14 @@
-import { FormGroup, TextArea } from '@blueprintjs/core';
+import { FormGroup, TextArea, Tooltip } from '@blueprintjs/core';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDebouncedCallback } from 'use-debounce';
 
-import { GetIgnoredHosts, SetIgnoredHosts } from '../../wailsjs/go/cfg/Config';
+import { useProxyState } from '@/context/ProxyStateContext';
+import { GetIgnoredHosts, SetIgnoredHosts } from 'wails/go/config/Config';
 
 export function IgnoredHostsInput() {
+  const { t } = useTranslation();
+  const { isProxyRunning } = useProxyState();
   const [state, setState] = useState({
     ignoredHosts: '',
     loading: true,
@@ -28,30 +32,37 @@ export function IgnoredHostsInput() {
 
   return (
     <FormGroup
-      label="Ignored Hosts"
+      label={t('ignoredHostsInput.label')}
       labelFor="ignoredHosts"
       helperText={
         <>
-          Hosts for transparent proxying, used for services with certificate pinning or those disrupted by proxying.
-          Still subject to ad-blocking at the domain level. <br />
-          One host per line.
+          {t('ignoredHostsInput.description')}
+          <br />
+          {t('ignoredHostsInput.helper')}
         </>
       }
     >
-      <TextArea
-        id="ignoredHosts"
-        placeholder="example.com"
-        className="settings-manager__ignored-hosts-input"
-        value={state.ignoredHosts}
-        onChange={(e) => {
-          const { value } = e.target;
-          setState({ ...state, ignoredHosts: value });
-          setIgnoredHosts(value);
-        }}
-        disabled={state.loading}
-        autoResize
-        fill
-      />
+      <Tooltip
+        content={t('common.stopProxyToModify') as string}
+        disabled={!isProxyRunning}
+        placement="top"
+        className="settings-manager__ignored-hosts-tooltip"
+      >
+        <TextArea
+          id="ignoredHosts"
+          placeholder="example.com"
+          className="settings-manager__ignored-hosts-input"
+          value={state.ignoredHosts}
+          onChange={(e) => {
+            const { value } = e.target;
+            setState({ ...state, ignoredHosts: value });
+            setIgnoredHosts(value);
+          }}
+          disabled={state.loading || isProxyRunning}
+          autoResize
+          fill
+        />
+      </Tooltip>
     </FormGroup>
   );
 }
